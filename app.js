@@ -1,359 +1,449 @@
-// ============================================
-//  SyncFlow — PeerJS WebRTC Device Linker
-// ============================================
+// =============================================
+//  SyncFlow — Full-Featured P2P Device Linker
+// =============================================
 
 let peer = null;
 let conn = null;
 let currentRoom = null;
 
-// ===== DOM REFS =====
+// ===== DOM =====
 const screenSetup = document.getElementById('screen-setup');
 const screenChat  = document.getElementById('screen-chat');
 
 // Setup
-const btnGenerate  = document.getElementById('btn-generate');
-const qrBox        = document.getElementById('qr-box');
-const qrCanvas     = document.getElementById('qr-canvas');
-const roomCodeVal  = document.getElementById('room-code-value');
-const btnCopyCode  = document.getElementById('btn-copy-code');
-const inputCode    = document.getElementById('input-code');
-const btnConnect   = document.getElementById('btn-connect');
-const joinError    = document.getElementById('join-error');
+const btnGenerate = document.getElementById('btn-generate');
+const qrResult    = document.getElementById('qr-result');
+const qrImg       = document.getElementById('qr-img');
+const codeDisplay = document.getElementById('code-display');
+const btnCopy     = document.getElementById('btn-copy');
+const shareUrl    = document.getElementById('share-url');
+const btnCopyUrl  = document.getElementById('btn-copy-url');
+const inputCode   = document.getElementById('input-code');
+const btnJoin     = document.getElementById('btn-join');
+const joinErr     = document.getElementById('join-err');
 
 // Chat
-const messagesArea = document.getElementById('messages-area');
-const msgInput     = document.getElementById('msg-input');
+const msgList      = document.getElementById('msg-list');
+const txtInput     = document.getElementById('txt-input');
 const btnSend      = document.getElementById('btn-send');
 const btnAttach    = document.getElementById('btn-attach');
-const fileInput    = document.getElementById('file-input');
-const btnDisconnect = document.getElementById('btn-disconnect');
-const chatRoomId   = document.getElementById('chat-room-id');
+const filePick     = document.getElementById('file-pick');
+const btnEnd       = document.getElementById('btn-end');
+const chRoom       = document.getElementById('ch-room');
 
 // Toast
-const toastEl   = document.getElementById('toast');
-const toastText = document.getElementById('toast-text');
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
 
-// ===== UTILITY =====
-function toast(msg, duration = 2500) {
-    toastText.textContent = msg;
-    toastEl.classList.remove('hidden');
-    toastEl.classList.add('show');
-    setTimeout(() => {
-        toastEl.classList.remove('show');
-        setTimeout(() => toastEl.classList.add('hidden'), 400);
-    }, duration);
+// ===== HELPERS =====
+function toast(msg, ms) {
+    ms = ms || 2500;
+    toastEl.textContent = msg;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() {
+        toastEl.classList.remove('on');
+    }, ms);
 }
 
-function generateRoomId() {
-    return Math.floor(1000 + Math.random() * 9000).toString();
+function genId() {
+    return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-function formatTime() {
-    const d = new Date();
+function timeNow() {
+    var d = new Date();
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
 }
 
-function getFileIcon(type) {
+function fileIcon(type) {
     if (!type) return '📄';
     if (type.startsWith('image/')) return '🖼️';
     if (type.startsWith('video/')) return '🎬';
     if (type.startsWith('audio/')) return '🎵';
-    if (type.includes('pdf'))     return '📕';
-    if (type.includes('zip') || type.includes('rar') || type.includes('7z')) return '🗜️';
-    if (type.includes('word') || type.includes('document')) return '📝';
-    if (type.includes('sheet') || type.includes('excel'))   return '📊';
+    if (type.indexOf('pdf') !== -1) return '📕';
+    if (type.indexOf('zip') !== -1 || type.indexOf('rar') !== -1 || type.indexOf('7z') !== -1) return '🗜️';
+    if (type.indexOf('word') !== -1 || type.indexOf('document') !== -1) return '📝';
+    if (type.indexOf('sheet') !== -1 || type.indexOf('excel') !== -1) return '📊';
+    if (type.indexOf('presentation') !== -1 || type.indexOf('powerpoint') !== -1) return '📊';
     return '📄';
 }
 
-// ===== AUTO-JOIN FROM QR =====
-window.addEventListener('DOMContentLoaded', () => {
-    const params = new URLSearchParams(window.location.search);
-    const peerParam = params.get('peer');
-    if (peerParam) {
-        inputCode.value = peerParam;
-        doJoin(peerParam);
+function linkify(text) {
+    var urlRe = /(https?:\/\/[^\s<]+)/g;
+    return text.replace(urlRe, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function escHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+// ===== AUTO JOIN FROM QR =====
+document.addEventListener('DOMContentLoaded', function() {
+    var params = new URLSearchParams(window.location.search);
+    var p = params.get('peer');
+    if (p) {
+        inputCode.value = p;
+        doJoin(p);
     }
 });
 
-// ===== GENERATE ROOM (PC SIDE) =====
-btnGenerate.addEventListener('click', () => {
+// ===== GENERATE ROOM =====
+btnGenerate.addEventListener('click', function() {
     btnGenerate.disabled = true;
-    btnGenerate.innerHTML = '<span class="btn-icon">⏳</span> Connecting...';
+    btnGenerate.textContent = 'Connecting…';
 
-    const roomId = generateRoomId();
+    var id = genId();
 
-    peer = new Peer(roomId, {
-        debug: 0
-    });
+    peer = new Peer(id, { debug: 0 });
 
-    peer.on('open', (id) => {
-        currentRoom = id;
-        roomCodeVal.textContent = id;
+    peer.on('open', function(myId) {
+        currentRoom = myId;
+        codeDisplay.textContent = myId;
+        chRoom.textContent = 'Room: ' + myId;
+
+        // Build join URL
+        var base = window.location.origin + window.location.pathname;
+        var joinUrl = base + '?peer=' + myId;
+        shareUrl.value = joinUrl;
+
+        // QR — render to data URL (this is the fix — canvas method was unreliable)
+        if (typeof QRCode !== 'undefined' && QRCode.toDataURL) {
+            QRCode.toDataURL(joinUrl, {
+                width: 256,
+                margin: 2,
+                color: { dark: '#1e293b', light: '#ffffff' }
+            }).then(function(url) {
+                qrImg.src = url;
+            }).catch(function(err) {
+                console.error('QR error:', err);
+                // Fallback: use a public API
+                qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=' + encodeURIComponent(joinUrl);
+            });
+        } else {
+            // Library didn't load — use public API fallback
+            qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=' + encodeURIComponent(joinUrl);
+        }
+
         btnGenerate.classList.add('hidden');
-        qrBox.classList.remove('hidden');
-        chatRoomId.textContent = 'Room: ' + id;
+        qrResult.classList.remove('hidden');
 
-        // Render QR
-        const joinUrl = window.location.origin + window.location.pathname + '?peer=' + id;
-        QRCode.toCanvas(qrCanvas, joinUrl, {
-            width: 180,
-            margin: 2,
-            color: { dark: '#1e293b', light: '#ffffff' }
-        }, (err) => { if (err) console.error(err); });
-
-        toast('Room created! Share the code with your phone.');
+        toast('Room ' + myId + ' created!');
     });
 
-    peer.on('connection', (connection) => {
-        setupDataConnection(connection);
+    peer.on('connection', function(connection) {
+        wireConnection(connection);
     });
 
-    peer.on('error', (err) => {
-        console.error('PeerJS error:', err);
+    peer.on('error', function(err) {
+        console.error('Peer error:', err);
         if (err.type === 'unavailable-id') {
-            // Try again with a new ID
+            // ID taken — retry with new ID
+            peer.destroy();
             btnGenerate.disabled = false;
-            btnGenerate.innerHTML = '<span class="btn-icon">🔗</span> Generate Code';
-            btnGenerate.classList.remove('hidden');
-            qrBox.classList.add('hidden');
+            btnGenerate.textContent = 'Generate Code';
             toast('Code taken, try again!');
         }
     });
 });
 
-// ===== JOIN ROOM (MOBILE SIDE) =====
-btnConnect.addEventListener('click', () => {
-    const code = inputCode.value.trim();
+// ===== JOIN ROOM =====
+btnJoin.addEventListener('click', function() {
+    var code = inputCode.value.trim();
     if (!code || code.length < 4) {
-        showJoinError('Enter a valid 4-digit code');
+        showJoinErr('Enter a valid 4-digit code');
         return;
     }
     doJoin(code);
 });
 
-inputCode.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') btnConnect.click();
+inputCode.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') btnJoin.click();
+});
+
+// Only allow numbers in code input
+inputCode.addEventListener('input', function() {
+    inputCode.value = inputCode.value.replace(/[^0-9]/g, '').slice(0, 4);
 });
 
 function doJoin(code) {
-    btnConnect.disabled = true;
-    btnConnect.textContent = 'Connecting...';
-    joinError.classList.add('hidden');
+    btnJoin.disabled = true;
+    btnJoin.textContent = 'Connecting…';
+    joinErr.classList.add('hidden');
 
     peer = new Peer(undefined, { debug: 0 });
 
-    peer.on('open', () => {
+    peer.on('open', function() {
         currentRoom = code;
-        chatRoomId.textContent = 'Room: ' + code;
-        const connection = peer.connect(code, { reliable: true });
-        setupDataConnection(connection);
+        chRoom.textContent = 'Room: ' + code;
+        var connection = peer.connect(code, { reliable: true });
+        wireConnection(connection);
     });
 
-    peer.on('error', (err) => {
-        console.error('PeerJS error:', err);
-        btnConnect.disabled = false;
-        btnConnect.textContent = 'Connect';
-        showJoinError('Failed to connect: ' + err.type);
+    peer.on('error', function(err) {
+        console.error('Peer error:', err);
+        btnJoin.disabled = false;
+        btnJoin.textContent = 'Connect';
+
+        if (err.type === 'peer-unavailable') {
+            showJoinErr('Room not found. Check the code and try again.');
+        } else {
+            showJoinErr('Connection failed: ' + err.type);
+        }
     });
 }
 
-function showJoinError(msg) {
-    joinError.textContent = msg;
-    joinError.classList.remove('hidden');
+function showJoinErr(msg) {
+    joinErr.textContent = msg;
+    joinErr.classList.remove('hidden');
 }
 
 // ===== DATA CONNECTION =====
-function setupDataConnection(connection) {
+function wireConnection(connection) {
     conn = connection;
 
-    conn.on('open', () => {
-        switchToChat();
+    conn.on('open', function() {
+        goToChat();
         toast('Devices linked! 🎉');
     });
 
-    conn.on('data', (data) => {
-        handleIncoming(data);
+    conn.on('data', function(data) {
+        onData(data);
     });
 
-    conn.on('close', () => {
-        addSystemMsg('The other device disconnected.');
-        toast('Device disconnected.');
+    conn.on('close', function() {
+        addSysMsg('The other device disconnected.');
+        toast('Device disconnected');
     });
 
-    conn.on('error', (err) => {
-        console.error('Connection error:', err);
-        toast('Connection error occurred.');
+    conn.on('error', function(err) {
+        console.error('Conn error:', err);
+        toast('Connection error');
     });
 }
 
-// ===== SWITCH SCREENS =====
-function switchToChat() {
-    screenSetup.classList.remove('active');
-    screenChat.classList.add('active');
-    if (window.innerWidth > 700) msgInput.focus();
+// ===== SCREEN SWITCH =====
+function goToChat() {
+    screenSetup.classList.remove('visible');
+    screenChat.classList.add('visible');
+    if (window.innerWidth > 700) txtInput.focus();
 }
 
-function switchToSetup() {
-    screenChat.classList.remove('active');
-    screenSetup.classList.add('active');
+function goToSetup() {
+    screenChat.classList.remove('visible');
+    screenSetup.classList.add('visible');
 }
 
-// ===== COPY CODE =====
-btnCopyCode.addEventListener('click', () => {
-    const code = roomCodeVal.textContent;
-    navigator.clipboard.writeText(code).then(() => {
-        toast('Code copied!');
-        btnCopyCode.textContent = '✅';
-        setTimeout(() => btnCopyCode.textContent = '📋', 1500);
-    }).catch(() => {
-        toast('Copy failed, manually share: ' + code);
-    });
+// ===== COPY =====
+btnCopy.addEventListener('click', function() {
+    copyText(codeDisplay.textContent, 'Code copied!');
 });
 
+btnCopyUrl.addEventListener('click', function() {
+    copyText(shareUrl.value, 'Link copied!');
+});
+
+function copyText(text, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+            toast(msg);
+        }).catch(function() {
+            fallbackCopy(text, msg);
+        });
+    } else {
+        fallbackCopy(text, msg);
+    }
+}
+
+function fallbackCopy(text, msg) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        toast(msg);
+    } catch (e) {
+        toast('Copy failed');
+    }
+    document.body.removeChild(ta);
+}
+
 // ===== DISCONNECT =====
-btnDisconnect.addEventListener('click', () => {
-    if (conn) conn.close();
-    if (peer) peer.destroy();
+btnEnd.addEventListener('click', function() {
+    if (conn) { try { conn.close(); } catch(e) {} }
+    if (peer) { try { peer.destroy(); } catch(e) {} }
     conn = null;
     peer = null;
     currentRoom = null;
 
-    // Reset UI
+    // Reset setup UI
     btnGenerate.disabled = false;
-    btnGenerate.innerHTML = '<span class="btn-icon">🔗</span> Generate Code';
+    btnGenerate.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Generate Code';
     btnGenerate.classList.remove('hidden');
-    qrBox.classList.add('hidden');
-    btnConnect.disabled = false;
-    btnConnect.textContent = 'Connect';
+    qrResult.classList.add('hidden');
+    btnJoin.disabled = false;
+    btnJoin.textContent = 'Connect';
     inputCode.value = '';
+    joinErr.classList.add('hidden');
 
     // Clear messages
-    messagesArea.innerHTML = '';
+    msgList.innerHTML = '';
 
-    switchToSetup();
-    toast('Disconnected.');
-});
+    // Remove ?peer= from URL
+    if (window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    goToSetup();
+    toast('Disconnected');
+}); 
 
 // ===== SEND TEXT =====
-btnSend.addEventListener('click', sendTextMessage);
-msgInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendTextMessage();
+btnSend.addEventListener('click', sendText);
+txtInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendText();
+    }
 });
 
-function sendTextMessage() {
-    const text = msgInput.value.trim();
+function sendText() {
+    var text = txtInput.value.trim();
     if (!text || !conn || !conn.open) return;
 
-    conn.send({ type: 'text', content: text, time: formatTime() });
-    addBubble(text, 'sent');
-    msgInput.value = '';
-    msgInput.focus();
+    conn.send({ type: 'text', content: text, time: timeNow() });
+    addBubble(text, 'out');
+    txtInput.value = '';
+    txtInput.focus();
 }
 
-// ===== SEND FILES =====
-btnAttach.addEventListener('click', () => fileInput.click());
-
-fileInput.addEventListener('change', (e) => {
-    const files = e.target.files;
-    if (!files.length || !conn || !conn.open) return;
-
-    Array.from(files).forEach(file => {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const arrayBuf = evt.target.result;
-
-            conn.send({
-                type: 'file',
-                file: arrayBuf,
-                filename: file.name,
-                filetype: file.type,
-                filesize: file.size,
-                time: formatTime()
-            });
-
-            addFileBubble(arrayBuf, file.name, file.type, file.size, 'sent');
-            toast('File sent: ' + file.name);
-        };
-        reader.readAsArrayBuffer(file);
-    });
-
-    fileInput.value = '';
+// ===== SEND FILE =====
+btnAttach.addEventListener('click', function() {
+    filePick.click();
 });
 
-// ===== HANDLE INCOMING =====
-function handleIncoming(data) {
+filePick.addEventListener('change', function() {
+    var files = filePick.files;
+    if (!files || !files.length || !conn || !conn.open) return;
+
+    for (var i = 0; i < files.length; i++) {
+        (function(file) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var buf = ev.target.result;
+                conn.send({
+                    type: 'file',
+                    file: buf,
+                    filename: file.name,
+                    filetype: file.type,
+                    filesize: file.size,
+                    time: timeNow()
+                });
+                addFileBubble(buf, file.name, file.type, file.size, 'out');
+                toast('Sent: ' + file.name);
+            };
+            reader.readAsArrayBuffer(file);
+        })(files[i]);
+    }
+
+    filePick.value = '';
+});
+
+// ===== INCOMING DATA =====
+function onData(data) {
     if (data.type === 'text') {
-        addBubble(data.content, 'received');
+        addBubble(data.content, 'in');
     } else if (data.type === 'file') {
-        addFileBubble(data.file, data.filename, data.filetype, data.filesize, 'received');
-        toast('File received: ' + data.filename);
+        addFileBubble(data.file, data.filename, data.filetype, data.filesize, 'in');
+        toast('Received: ' + data.filename);
     }
 }
 
-// ===== UI: ADD BUBBLE =====
-function addBubble(text, direction) {
-    const div = document.createElement('div');
-    div.className = 'msg-bubble ' + direction;
+// ===== UI: BUBBLES =====
+function addBubble(text, dir) {
+    var div = document.createElement('div');
+    div.className = 'bubble ' + dir;
 
-    // Linkify URLs
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const htmlContent = text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    var safe = escHtml(text);
+    var linked = linkify(safe);
+    div.innerHTML = linked + '<span class="ts">' + timeNow() + '</span>';
 
-    div.innerHTML = htmlContent + '<span class="msg-time">' + formatTime() + '</span>';
-    messagesArea.appendChild(div);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    msgList.appendChild(div);
+    scrollBottom();
 }
 
-function addFileBubble(fileData, filename, filetype, filesize, direction) {
-    const div = document.createElement('div');
-    div.className = 'msg-bubble ' + direction;
+function addFileBubble(fileData, name, type, size, dir) {
+    var div = document.createElement('div');
+    div.className = 'bubble ' + dir;
 
-    const blob = new Blob([fileData], { type: filetype });
-    const url = URL.createObjectURL(blob);
+    var blob = new Blob([fileData], { type: type || 'application/octet-stream' });
+    var url = URL.createObjectURL(blob);
 
-    if (filetype && filetype.startsWith('image/')) {
-        // Show image preview
-        const img = document.createElement('img');
+    if (type && type.startsWith('image/')) {
+        var img = document.createElement('img');
         img.src = url;
-        img.alt = filename;
+        img.alt = name;
         img.style.cursor = 'pointer';
-        img.onclick = () => window.open(url, '_blank');
+        img.addEventListener('click', function() {
+            window.open(url, '_blank');
+        });
         div.appendChild(img);
+    } else if (type && type.startsWith('video/')) {
+        var vid = document.createElement('video');
+        vid.src = url;
+        vid.controls = true;
+        vid.style.maxWidth = '100%';
+        vid.style.borderRadius = '12px';
+        div.appendChild(vid);
+    } else if (type && type.startsWith('audio/')) {
+        var aud = document.createElement('audio');
+        aud.src = url;
+        aud.controls = true;
+        aud.style.width = '100%';
+        div.appendChild(aud);
     } else {
-        // Show file card
-        const card = document.createElement('a');
+        var card = document.createElement('a');
         card.href = url;
-        card.download = filename;
-        card.className = 'msg-file-card';
-        card.innerHTML = `
-            <div class="file-icon-box">${getFileIcon(filetype)}</div>
-            <div class="file-info">
-                <span class="file-name">${filename}</span>
-                <span class="file-size">${formatFileSize(filesize || 0)} — Tap to download</span>
-            </div>
-        `;
+        card.download = name;
+        card.className = 'file-card';
+        card.innerHTML =
+            '<div class="fc-icon">' + fileIcon(type) + '</div>' +
+            '<div class="fc-info">' +
+                '<span class="fc-name">' + escHtml(name) + '</span>' +
+                '<span class="fc-size">' + fmtSize(size) + ' — Tap to download</span>' +
+            '</div>';
         div.appendChild(card);
     }
 
-    const time = document.createElement('span');
-    time.className = 'msg-time';
-    time.textContent = formatTime();
-    div.appendChild(time);
+    var ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = timeNow();
+    div.appendChild(ts);
 
-    messagesArea.appendChild(div);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    msgList.appendChild(div);
+    scrollBottom();
 }
 
-function addSystemMsg(text) {
-    const div = document.createElement('div');
-    div.className = 'system-msg';
-    div.innerHTML = '<span class="system-icon">ℹ️</span><span>' + text + '</span>';
-    messagesArea.appendChild(div);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+function addSysMsg(text) {
+    var div = document.createElement('div');
+    div.className = 'sys-msg';
+    div.innerHTML = '<span>ℹ️</span><span>' + escHtml(text) + '</span>';
+    msgList.appendChild(div);
+    scrollBottom();
+}
+
+function scrollBottom() {
+    msgList.scrollTop = msgList.scrollHeight;
 }
