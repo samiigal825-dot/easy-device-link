@@ -140,17 +140,43 @@
                         <span id="ch-room" class="ch-room">Room: ----</span>
                     </div>
                 </div>
-                <button id="btn-end" class="btn-end">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    End
-                </button>
+                <div class="ch-right">
+                    <!-- Tab Buttons -->
+                    <div class="tab-bar">
+                        <button id="tab-chat" class="tab-btn active" data-tab="chat">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                            Chat
+                        </button>
+                        <button id="tab-files" class="tab-btn" data-tab="files">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                            Files <span id="files-count" class="files-count hidden">0</span>
+                        </button>
+                    </div>
+                    <button id="btn-end" class="btn-end">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        End
+                    </button>
+                </div>
             </div>
 
-            <!-- Messages -->
-            <div id="msg-list" class="msg-list">
-                <div class="sys-msg">
-                    <span>🎉</span>
-                    <span>Connected! Share text, links, or files below.</span>
+            <!-- PANEL: Chat Messages -->
+            <div id="panel-chat" class="panel active-panel">
+                <div id="msg-list" class="msg-list">
+                    <div class="sys-msg">
+                        <span>🎉</span>
+                        <span>Connected! Share text, links, or files below.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PANEL: Files Gallery -->
+            <div id="panel-files" class="panel">
+                <div id="files-grid" class="files-grid">
+                    <div class="files-empty">
+                        <div class="fe-icon">📂</div>
+                        <p>No files transferred yet.</p>
+                        <p class="fe-sub">All sent &amp; received files will appear here for easy access — even after disconnecting.</p>
+                    </div>
                 </div>
             </div>
 

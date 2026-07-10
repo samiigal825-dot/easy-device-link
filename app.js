@@ -31,9 +31,20 @@ const filePick     = document.getElementById('file-pick');
 const btnEnd       = document.getElementById('btn-end');
 const chRoom       = document.getElementById('ch-room');
 
+// Tabs & Panels
+const tabChat      = document.getElementById('tab-chat');
+const tabFiles     = document.getElementById('tab-files');
+const panelChat    = document.getElementById('panel-chat');
+const panelFiles   = document.getElementById('panel-files');
+const filesGrid    = document.getElementById('files-grid');
+const filesCount   = document.getElementById('files-count');
+
 // Toast
 const toastEl = document.getElementById('toast');
 let toastTimer = null;
+
+// File store — keeps all transferred files accessible even after disconnect
+var fileStore = [];
 
 // ===== HELPERS =====
 function toast(msg, ms) {
@@ -391,6 +402,9 @@ function addFileBubble(fileData, name, type, size, dir) {
     var blob = new Blob([fileData], { type: type || 'application/octet-stream' });
     var url = URL.createObjectURL(blob);
 
+    // Register in files gallery
+    registerFile(url, name, type, size, dir);
+
     if (type && type.startsWith('image/')) {
         var img = document.createElement('img');
         img.src = url;
@@ -447,3 +461,108 @@ function addSysMsg(text) {
 function scrollBottom() {
     msgList.scrollTop = msgList.scrollHeight;
 }
+
+// ===== TAB SWITCHING =====
+tabChat.addEventListener('click', function() {
+    tabChat.classList.add('active');
+    tabFiles.classList.remove('active');
+    panelChat.classList.add('active-panel');
+    panelFiles.classList.remove('active-panel');
+});
+
+tabFiles.addEventListener('click', function() {
+    tabFiles.classList.add('active');
+    tabChat.classList.remove('active');
+    panelFiles.classList.add('active-panel');
+    panelChat.classList.remove('active-panel');
+});
+
+// ===== FILE STORE & GALLERY =====
+function registerFile(blobUrl, name, type, size, direction) {
+    fileStore.push({
+        url: blobUrl,
+        name: name,
+        type: type || '',
+        size: size || 0,
+        direction: direction, // 'out' or 'in'
+        time: timeNow()
+    });
+    renderFilesGrid();
+}
+
+function renderFilesGrid() {
+    // Update count badge
+    filesCount.textContent = fileStore.length;
+    if (fileStore.length > 0) {
+        filesCount.classList.remove('hidden');
+    } else {
+        filesCount.classList.add('hidden');
+    }
+
+    // Clear grid
+    filesGrid.innerHTML = '';
+
+    if (fileStore.length === 0) {
+        filesGrid.innerHTML =
+            '<div class="files-empty">' +
+                '<div class="fe-icon">📂</div>' +
+                '<p>No files transferred yet.</p>' +
+                '<p class="fe-sub">All sent & received files will appear here for easy access — even after disconnecting.</p>' +
+            '</div>';
+        return;
+    }
+
+    // Render tiles in reverse (newest first)
+    for (var i = fileStore.length - 1; i >= 0; i--) {
+        var f = fileStore[i];
+        var tile = document.createElement('a');
+        tile.href = f.url;
+        tile.download = f.name;
+        tile.className = 'ftile';
+        tile.title = f.name;
+
+        // Preview
+        var preview = document.createElement('div');
+        preview.className = 'ftile-preview';
+
+        if (f.type.startsWith('image/')) {
+            var img = document.createElement('img');
+            img.src = f.url;
+            img.alt = f.name;
+            preview.appendChild(img);
+        } else {
+            var icon = document.createElement('div');
+            icon.className = 'ftile-icon';
+            icon.textContent = fileIcon(f.type);
+            preview.appendChild(icon);
+        }
+
+        // Info
+        var info = document.createElement('div');
+        info.className = 'ftile-info';
+
+        var nameEl = document.createElement('div');
+        nameEl.className = 'ftile-name';
+        nameEl.textContent = f.name;
+
+        var meta = document.createElement('div');
+        meta.className = 'ftile-meta';
+
+        var sizeEl = document.createElement('span');
+        sizeEl.textContent = fmtSize(f.size);
+
+        var dirEl = document.createElement('span');
+        dirEl.className = 'ftile-dir ' + (f.direction === 'out' ? 'sent-tag' : 'recv-tag');
+        dirEl.textContent = f.direction === 'out' ? 'Sent' : 'Received';
+
+        meta.appendChild(sizeEl);
+        meta.appendChild(dirEl);
+        info.appendChild(nameEl);
+        info.appendChild(meta);
+
+        tile.appendChild(preview);
+        tile.appendChild(info);
+        filesGrid.appendChild(tile);
+    }
+}
+
