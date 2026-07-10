@@ -1,232 +1,359 @@
+// ============================================
+//  SyncFlow — PeerJS WebRTC Device Linker
+// ============================================
+
 let peer = null;
 let conn = null;
+let currentRoom = null;
 
-// DOM Elements
-const setupView = document.getElementById('setup-view');
-const chatView = document.getElementById('chat-view');
-const btnCreateRoom = document.getElementById('btn-create-room');
-const qrContainer = document.getElementById('qr-container');
-const roomCodeDisplay = document.getElementById('room-code-display');
-const btnJoinRoom = document.getElementById('btn-join-room');
-const inputRoomCode = document.getElementById('input-room-code');
-const joinError = document.getElementById('join-error');
-const chatMessages = document.getElementById('chat-messages');
-const inputMessage = document.getElementById('input-message');
-const btnSend = document.getElementById('btn-send');
-const btnFile = document.getElementById('btn-file');
-const inputFile = document.getElementById('input-file');
+// ===== DOM REFS =====
+const screenSetup = document.getElementById('screen-setup');
+const screenChat  = document.getElementById('screen-chat');
 
-// Initialize QR library
-const renderQR = (url) => {
-    const canvas = document.getElementById('qrcode');
-    QRCode.toCanvas(canvas, url, { width: 200, margin: 2 }, function (error) {
-        if (error) console.error(error);
-    });
-};
+// Setup
+const btnGenerate  = document.getElementById('btn-generate');
+const qrBox        = document.getElementById('qr-box');
+const qrCanvas     = document.getElementById('qr-canvas');
+const roomCodeVal  = document.getElementById('room-code-value');
+const btnCopyCode  = document.getElementById('btn-copy-code');
+const inputCode    = document.getElementById('input-code');
+const btnConnect   = document.getElementById('btn-connect');
+const joinError    = document.getElementById('join-error');
 
-function generateId() {
+// Chat
+const messagesArea = document.getElementById('messages-area');
+const msgInput     = document.getElementById('msg-input');
+const btnSend      = document.getElementById('btn-send');
+const btnAttach    = document.getElementById('btn-attach');
+const fileInput    = document.getElementById('file-input');
+const btnDisconnect = document.getElementById('btn-disconnect');
+const chatRoomId   = document.getElementById('chat-room-id');
+
+// Toast
+const toastEl   = document.getElementById('toast');
+const toastText = document.getElementById('toast-text');
+
+// ===== UTILITY =====
+function toast(msg, duration = 2500) {
+    toastText.textContent = msg;
+    toastEl.classList.remove('hidden');
+    toastEl.classList.add('show');
+    setTimeout(() => {
+        toastEl.classList.remove('show');
+        setTimeout(() => toastEl.classList.add('hidden'), 400);
+    }, duration);
+}
+
+function generateRoomId() {
     return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
+function formatTime() {
+    const d = new Date();
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function getFileIcon(type) {
+    if (!type) return '📄';
+    if (type.startsWith('image/')) return '🖼️';
+    if (type.startsWith('video/')) return '🎬';
+    if (type.startsWith('audio/')) return '🎵';
+    if (type.includes('pdf'))     return '📕';
+    if (type.includes('zip') || type.includes('rar') || type.includes('7z')) return '🗜️';
+    if (type.includes('word') || type.includes('document')) return '📝';
+    if (type.includes('sheet') || type.includes('excel'))   return '📊';
+    return '📄';
+}
+
+// ===== AUTO-JOIN FROM QR =====
 window.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const peerParam = urlParams.get('peer');
+    const params = new URLSearchParams(window.location.search);
+    const peerParam = params.get('peer');
     if (peerParam) {
-        inputRoomCode.value = peerParam;
-        joinRoom(peerParam);
+        inputCode.value = peerParam;
+        doJoin(peerParam);
     }
 });
 
-function setupConnection(connection) {
-    conn = connection;
-    conn.on('open', () => {
-        switchToChatView();
-    });
-    conn.on('data', (data) => {
-        handleIncomingData(data);
-    });
-    conn.on('close', () => {
-        addSystemMessage('The other device disconnected.');
-    });
-}
+// ===== GENERATE ROOM (PC SIDE) =====
+btnGenerate.addEventListener('click', () => {
+    btnGenerate.disabled = true;
+    btnGenerate.innerHTML = '<span class="btn-icon">⏳</span> Connecting...';
 
-// PC: Create Room
-btnCreateRoom.addEventListener('click', () => {
-    btnCreateRoom.disabled = true;
-    btnCreateRoom.textContent = 'Generating...';
-    
-    const id = generateId();
-    peer = new Peer(id); // create peer with specific ID
-    
+    const roomId = generateRoomId();
+
+    peer = new Peer(roomId, {
+        debug: 0
+    });
+
     peer.on('open', (id) => {
-        roomCodeDisplay.textContent = id;
-        btnCreateRoom.classList.add('hidden');
-        qrContainer.classList.remove('hidden');
-        
-        const joinUrl = `${window.location.origin}/?peer=${id}`;
-        renderQR(joinUrl);
+        currentRoom = id;
+        roomCodeVal.textContent = id;
+        btnGenerate.classList.add('hidden');
+        qrBox.classList.remove('hidden');
+        chatRoomId.textContent = 'Room: ' + id;
+
+        // Render QR
+        const joinUrl = window.location.origin + window.location.pathname + '?peer=' + id;
+        QRCode.toCanvas(qrCanvas, joinUrl, {
+            width: 180,
+            margin: 2,
+            color: { dark: '#1e293b', light: '#ffffff' }
+        }, (err) => { if (err) console.error(err); });
+
+        toast('Room created! Share the code with your phone.');
     });
 
     peer.on('connection', (connection) => {
-        setupConnection(connection);
+        setupDataConnection(connection);
+    });
+
+    peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        if (err.type === 'unavailable-id') {
+            // Try again with a new ID
+            btnGenerate.disabled = false;
+            btnGenerate.innerHTML = '<span class="btn-icon">🔗</span> Generate Code';
+            btnGenerate.classList.remove('hidden');
+            qrBox.classList.add('hidden');
+            toast('Code taken, try again!');
+        }
     });
 });
 
-// Mobile: Join Room
-const joinRoom = (code) => {
-    if (code.length === 4) {
-        btnJoinRoom.disabled = true;
-        btnJoinRoom.textContent = 'Connecting...';
-        joinError.classList.add('hidden');
-        
-        peer = new Peer(); // random id for mobile
-        peer.on('open', () => {
-            const connection = peer.connect(code);
-            setupConnection(connection);
-        });
-        
-        peer.on('error', (err) => {
-            showError('Failed to connect: ' + err.type);
-            btnJoinRoom.disabled = false;
-            btnJoinRoom.textContent = 'Connect';
-        });
-    }
-};
-
-btnJoinRoom.addEventListener('click', () => {
-    const code = inputRoomCode.value.trim();
-    if (!code) {
-        showError('Please enter a 4-digit code');
+// ===== JOIN ROOM (MOBILE SIDE) =====
+btnConnect.addEventListener('click', () => {
+    const code = inputCode.value.trim();
+    if (!code || code.length < 4) {
+        showJoinError('Enter a valid 4-digit code');
         return;
     }
-    joinRoom(code);
+    doJoin(code);
 });
 
-// Chat & UI Functions
-function switchToChatView() {
-    setupView.classList.remove('active');
-    setupView.classList.add('hidden');
-    chatView.classList.remove('hidden');
-    chatView.classList.add('active');
-    
-    if (window.innerWidth > 600) {
-        inputMessage.focus();
-    }
+inputCode.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') btnConnect.click();
+});
+
+function doJoin(code) {
+    btnConnect.disabled = true;
+    btnConnect.textContent = 'Connecting...';
+    joinError.classList.add('hidden');
+
+    peer = new Peer(undefined, { debug: 0 });
+
+    peer.on('open', () => {
+        currentRoom = code;
+        chatRoomId.textContent = 'Room: ' + code;
+        const connection = peer.connect(code, { reliable: true });
+        setupDataConnection(connection);
+    });
+
+    peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        btnConnect.disabled = false;
+        btnConnect.textContent = 'Connect';
+        showJoinError('Failed to connect: ' + err.type);
+    });
 }
 
-function showError(msg) {
+function showJoinError(msg) {
     joinError.textContent = msg;
     joinError.classList.remove('hidden');
 }
 
-function handleIncomingData(data) {
+// ===== DATA CONNECTION =====
+function setupDataConnection(connection) {
+    conn = connection;
+
+    conn.on('open', () => {
+        switchToChat();
+        toast('Devices linked! 🎉');
+    });
+
+    conn.on('data', (data) => {
+        handleIncoming(data);
+    });
+
+    conn.on('close', () => {
+        addSystemMsg('The other device disconnected.');
+        toast('Device disconnected.');
+    });
+
+    conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        toast('Connection error occurred.');
+    });
+}
+
+// ===== SWITCH SCREENS =====
+function switchToChat() {
+    screenSetup.classList.remove('active');
+    screenChat.classList.add('active');
+    if (window.innerWidth > 700) msgInput.focus();
+}
+
+function switchToSetup() {
+    screenChat.classList.remove('active');
+    screenSetup.classList.add('active');
+}
+
+// ===== COPY CODE =====
+btnCopyCode.addEventListener('click', () => {
+    const code = roomCodeVal.textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        toast('Code copied!');
+        btnCopyCode.textContent = '✅';
+        setTimeout(() => btnCopyCode.textContent = '📋', 1500);
+    }).catch(() => {
+        toast('Copy failed, manually share: ' + code);
+    });
+});
+
+// ===== DISCONNECT =====
+btnDisconnect.addEventListener('click', () => {
+    if (conn) conn.close();
+    if (peer) peer.destroy();
+    conn = null;
+    peer = null;
+    currentRoom = null;
+
+    // Reset UI
+    btnGenerate.disabled = false;
+    btnGenerate.innerHTML = '<span class="btn-icon">🔗</span> Generate Code';
+    btnGenerate.classList.remove('hidden');
+    qrBox.classList.add('hidden');
+    btnConnect.disabled = false;
+    btnConnect.textContent = 'Connect';
+    inputCode.value = '';
+
+    // Clear messages
+    messagesArea.innerHTML = '';
+
+    switchToSetup();
+    toast('Disconnected.');
+});
+
+// ===== SEND TEXT =====
+btnSend.addEventListener('click', sendTextMessage);
+msgInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendTextMessage();
+});
+
+function sendTextMessage() {
+    const text = msgInput.value.trim();
+    if (!text || !conn || !conn.open) return;
+
+    conn.send({ type: 'text', content: text, time: formatTime() });
+    addBubble(text, 'sent');
+    msgInput.value = '';
+    msgInput.focus();
+}
+
+// ===== SEND FILES =====
+btnAttach.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (!files.length || !conn || !conn.open) return;
+
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const arrayBuf = evt.target.result;
+
+            conn.send({
+                type: 'file',
+                file: arrayBuf,
+                filename: file.name,
+                filetype: file.type,
+                filesize: file.size,
+                time: formatTime()
+            });
+
+            addFileBubble(arrayBuf, file.name, file.type, file.size, 'sent');
+            toast('File sent: ' + file.name);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    fileInput.value = '';
+});
+
+// ===== HANDLE INCOMING =====
+function handleIncoming(data) {
     if (data.type === 'text') {
-        addMessage(data.content, 'received');
+        addBubble(data.content, 'received');
     } else if (data.type === 'file') {
-        addFileMessage(data.file, data.filename, data.filetype, 'received');
+        addFileBubble(data.file, data.filename, data.filetype, data.filesize, 'received');
+        toast('File received: ' + data.filename);
     }
 }
 
-const sendMessage = () => {
-    const text = inputMessage.value.trim();
-    if (!text || !conn) return;
+// ===== UI: ADD BUBBLE =====
+function addBubble(text, direction) {
+    const div = document.createElement('div');
+    div.className = 'msg-bubble ' + direction;
 
-    addMessage(text, 'sent');
-    conn.send({ type: 'text', content: text });
+    // Linkify URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const htmlContent = text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 
-    inputMessage.value = '';
-    inputMessage.focus();
-};
-
-btnSend.addEventListener('click', sendMessage);
-inputMessage.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-});
-
-// File Transfer
-btnFile.addEventListener('click', () => inputFile.click());
-
-inputFile.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file || !conn) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const fileData = event.target.result;
-        
-        addFileMessage(fileData, file.name, file.type, 'sent');
-        
-        conn.send({
-            type: 'file',
-            file: fileData,
-            filename: file.name,
-            filetype: file.type
-        });
-    };
-    reader.readAsArrayBuffer(file);
-});
-
-function addMessage(text, type) {
-    hideWelcome();
-    const msgDiv = document.createElement('div');
-    msgDiv.classList.add('message', type);
-    
-    if (text.startsWith('http://') || text.startsWith('https://')) {
-        const link = document.createElement('a');
-        link.href = text;
-        link.target = '_blank';
-        link.textContent = text;
-        link.style.color = type === 'sent' ? 'white' : 'var(--primary)';
-        msgDiv.appendChild(link);
-    } else {
-        msgDiv.textContent = text;
-    }
-    
-    chatMessages.appendChild(msgDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    div.innerHTML = htmlContent + '<span class="msg-time">' + formatTime() + '</span>';
+    messagesArea.appendChild(div);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
-function addFileMessage(fileData, filename, filetype, type) {
-    hideWelcome();
-    const msgDiv = document.createElement('div');
-    msgDiv.classList.add('message', type);
-    
-    // Create Blob from ArrayBuffer
+function addFileBubble(fileData, filename, filetype, filesize, direction) {
+    const div = document.createElement('div');
+    div.className = 'msg-bubble ' + direction;
+
     const blob = new Blob([fileData], { type: filetype });
     const url = URL.createObjectURL(blob);
-    
+
     if (filetype && filetype.startsWith('image/')) {
+        // Show image preview
         const img = document.createElement('img');
         img.src = url;
-        img.style.maxWidth = '100%';
-        img.style.borderRadius = '8px';
-        msgDiv.appendChild(img);
+        img.alt = filename;
+        img.style.cursor = 'pointer';
+        img.onclick = () => window.open(url, '_blank');
+        div.appendChild(img);
     } else {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.textContent = '📎 Download ' + filename;
-        link.style.color = type === 'sent' ? 'white' : 'var(--primary)';
-        link.style.textDecoration = 'underline';
-        msgDiv.appendChild(link);
+        // Show file card
+        const card = document.createElement('a');
+        card.href = url;
+        card.download = filename;
+        card.className = 'msg-file-card';
+        card.innerHTML = `
+            <div class="file-icon-box">${getFileIcon(filetype)}</div>
+            <div class="file-info">
+                <span class="file-name">${filename}</span>
+                <span class="file-size">${formatFileSize(filesize || 0)} — Tap to download</span>
+            </div>
+        `;
+        div.appendChild(card);
     }
-    
-    chatMessages.appendChild(msgDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    const time = document.createElement('span');
+    time.className = 'msg-time';
+    time.textContent = formatTime();
+    div.appendChild(time);
+
+    messagesArea.appendChild(div);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
 
-function hideWelcome() {
-    const welcome = document.querySelector('.welcome-msg');
-    if (welcome) welcome.style.display = 'none';
-}
-
-function addSystemMessage(text) {
-    const msgDiv = document.createElement('div');
-    msgDiv.classList.add('welcome-msg');
-    msgDiv.style.marginTop = '10px';
-    msgDiv.textContent = text;
-    chatMessages.appendChild(msgDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+function addSystemMsg(text) {
+    const div = document.createElement('div');
+    div.className = 'system-msg';
+    div.innerHTML = '<span class="system-icon">ℹ️</span><span>' + text + '</span>';
+    messagesArea.appendChild(div);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }

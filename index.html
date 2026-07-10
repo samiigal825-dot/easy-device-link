@@ -2,86 +2,164 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy Device Linker</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SyncFlow — Instant Device Linker</title>
+    <meta name="description" content="Link your PC and Mobile instantly. Share text, files, images — no app install needed.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="background-shapes">
-        <div class="shape shape-1"></div>
-        <div class="shape shape-2"></div>
-        <div class="shape shape-3"></div>
+
+    <!-- Animated Background -->
+    <div class="bg-gradient">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
     </div>
 
-    <div class="container glass-panel">
-        <!-- View 1: Setup -->
-        <div id="setup-view" class="view active">
-            <h1 class="title">Sync<span class="highlight">Flow</span></h1>
-            <p class="subtitle">Link your devices instantly</p>
+    <!-- ============ SCREEN 1: LANDING / SETUP ============ -->
+    <div id="screen-setup" class="screen active">
+        <div class="glass-container">
+            <!-- Header -->
+            <div class="header">
+                <h1 class="logo">Sync<span class="logo-accent">Flow</span></h1>
+                <p class="tagline">Link any device. Share anything. Instantly.</p>
+            </div>
 
-            <div class="action-cards">
-                <!-- PC Card -->
-                <div class="card pc-card">
-                    <div class="card-icon">🖥️</div>
-                    <h3>Start Link (PC)</h3>
-                    <p>Generate a QR and short code to link your phone.</p>
-                    <button id="btn-create-room" class="btn primary-btn">Generate Code</button>
-                    
-                    <div id="qr-container" class="hidden">
-                        <canvas id="qrcode"></canvas>
-                        <div class="code-display">
-                            <span class="label">Room Code:</span>
-                            <span id="room-code-display" class="code-text">----</span>
+            <!-- Features Strip -->
+            <div class="features-strip">
+                <div class="feature-chip">
+                    <span class="feature-icon">⚡</span>
+                    <span>Instant P2P</span>
+                </div>
+                <div class="feature-chip">
+                    <span class="feature-icon">🔒</span>
+                    <span>End-to-End</span>
+                </div>
+                <div class="feature-chip">
+                    <span class="feature-icon">📁</span>
+                    <span>Any File</span>
+                </div>
+                <div class="feature-chip">
+                    <span class="feature-icon">🌐</span>
+                    <span>No App Needed</span>
+                </div>
+            </div>
+
+            <!-- Two Columns -->
+            <div class="setup-grid">
+                <!-- CREATE ROOM (PC Side) -->
+                <div class="setup-card" id="card-create">
+                    <div class="card-badge">STEP 1 — PC</div>
+                    <div class="card-emoji">🖥️</div>
+                    <h2 class="card-title">Generate Link</h2>
+                    <p class="card-desc">Click below to generate a QR code and a short code. Then scan or enter it on your phone.</p>
+                    <button id="btn-generate" class="btn btn-primary">
+                        <span class="btn-icon">🔗</span>
+                        Generate Code
+                    </button>
+
+                    <!-- QR Code Box (hidden initially) -->
+                    <div id="qr-box" class="qr-box hidden">
+                        <div class="qr-frame">
+                            <canvas id="qr-canvas"></canvas>
                         </div>
-                        <p class="status-text waiting">Waiting for device to connect...</p>
+                        <div class="room-code-box">
+                            <span class="room-code-label">Your Code</span>
+                            <span id="room-code-value" class="room-code-value">----</span>
+                            <button id="btn-copy-code" class="btn-copy" title="Copy Code">📋</button>
+                        </div>
+                        <div class="pulse-status">
+                            <div class="pulse-dot"></div>
+                            <span>Waiting for device...</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Mobile Card -->
-                <div class="card mobile-card">
-                    <div class="card-icon">📱</div>
-                    <h3>Join Link (Mobile)</h3>
-                    <p>Enter the 4-digit code shown on your PC.</p>
-                    <div class="input-group">
-                        <input type="number" id="input-room-code" placeholder="4-Digit Code" maxlength="4">
-                        <button id="btn-join-room" class="btn secondary-btn">Connect</button>
+                <!-- JOIN ROOM (Mobile Side) -->
+                <div class="setup-card" id="card-join">
+                    <div class="card-badge">STEP 2 — Mobile</div>
+                    <div class="card-emoji">📱</div>
+                    <h2 class="card-title">Enter Code</h2>
+                    <p class="card-desc">Open this site on your phone. Enter the 4-digit code shown on your PC screen.</p>
+                    <div class="join-input-row">
+                        <input type="text" id="input-code" class="code-input" placeholder="0000" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+                        <button id="btn-connect" class="btn btn-accent">
+                            Connect
+                        </button>
                     </div>
-                    <div id="join-error" class="error-msg hidden"></div>
+                    <div id="join-error" class="error-text hidden"></div>
+                </div>
+            </div>
+
+            <!-- How It Works -->
+            <div class="how-section">
+                <h3 class="how-title">How It Works</h3>
+                <div class="steps-row">
+                    <div class="step">
+                        <div class="step-num">1</div>
+                        <p>Open this page on <strong>PC</strong> and tap <em>Generate Code</em></p>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step">
+                        <div class="step-num">2</div>
+                        <p>Open this page on <strong>Phone</strong> and enter the code</p>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step">
+                        <div class="step-num">3</div>
+                        <p>Start sharing <strong>text, files, images</strong> instantly!</p>
+                    </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- View 2: Connected Chat -->
-        <div id="chat-view" class="view hidden">
+    <!-- ============ SCREEN 2: CONNECTED / CHAT ============ -->
+    <div id="screen-chat" class="screen">
+        <div class="glass-container chat-container">
+            <!-- Chat Header -->
             <div class="chat-header">
-                <h2>Connected Device</h2>
-                <div class="connection-status">
-                    <div class="dot active"></div>
-                    <span>Linked</span>
+                <div class="chat-header-left">
+                    <div class="status-dot online"></div>
+                    <div>
+                        <h2 class="chat-title">Devices Linked</h2>
+                        <span id="chat-room-id" class="chat-room-id">Room: ----</span>
+                    </div>
+                </div>
+                <button id="btn-disconnect" class="btn btn-sm btn-danger">Disconnect</button>
+            </div>
+
+            <!-- Messages Area -->
+            <div id="messages-area" class="messages-area">
+                <div class="system-msg">
+                    <span class="system-icon">🎉</span>
+                    <span>Devices linked successfully! You can now share text, links, and files.</span>
                 </div>
             </div>
-            
-            <div id="chat-messages" class="chat-messages">
-                <div class="welcome-msg">You are now linked! Try sending a text.</div>
-            </div>
-            
-            <div class="chat-input-area">
-                <input type="file" id="input-file" class="hidden">
-                <button id="btn-file" class="btn secondary-btn" style="width: auto; padding: 0 15px;" title="Send File">
-                    📎
+
+            <!-- Input Area -->
+            <div class="chat-input-bar">
+                <input type="file" id="file-input" class="hidden" multiple>
+                <button id="btn-attach" class="btn-icon-circle" title="Attach File">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"></path></svg>
                 </button>
-                <input type="text" id="input-message" placeholder="Type a message or link..." autocomplete="off">
-                <button id="btn-send" class="btn send-btn">
-                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="css-i6dzq1"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                <input type="text" id="msg-input" class="msg-input" placeholder="Type a message..." autocomplete="off">
+                <button id="btn-send" class="btn-icon-circle btn-send-circle" title="Send">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <!-- ============ TOAST / NOTIFICATION ============ -->
+    <div id="toast" class="toast hidden">
+        <span id="toast-text"></span>
+    </div>
+
+    <!-- Scripts (CDN) -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
